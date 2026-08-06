@@ -23,7 +23,7 @@ There is no load balancer, NAT gateway, SSH key, public database, or paid AI ser
 The one-time `infra/bootstrap` stack owns:
 
 - Encrypted, versioned Terraform state bucket
-- GitHub OIDC deployment role
+- GitHub OIDC deployment role.
 - Scoped IAM permissions allowing Terraform to manage AstroAI resources
 
 The remote-state `infra/application` stack owns:
