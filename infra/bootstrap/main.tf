@@ -1,8 +1,9 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  state_bucket = "astroai-tfstate-${data.aws_caller_identity.current.account_id}"
-  oidc_arn     = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_github_oidc_provider_arn
+  state_bucket   = "astroai-tfstate-${data.aws_caller_identity.current.account_id}"
+  oidc_arn       = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_github_oidc_provider_arn
+  github_subject = var.github_oidc_subject != "" ? var.github_oidc_subject : "repo:${var.github_repository}:environment:dev"
 }
 
 resource "aws_s3_bucket" "state" {
@@ -56,7 +57,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:dev"]
+      values   = [local.github_subject]
     }
   }
 }

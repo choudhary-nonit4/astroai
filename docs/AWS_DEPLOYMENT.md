@@ -102,6 +102,7 @@ Edit `terraform.tfvars`:
 ```hcl
 aws_region        = "ap-south-1"
 github_repository = "YOUR_GITHUB_USER/astroai"
+github_oidc_subject = "repo:YOUR_GITHUB_USER@OWNER_ID/astroai@REPOSITORY_ID:environment:dev"
 ```
 
 If the provider already exists, also set:

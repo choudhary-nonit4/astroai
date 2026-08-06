@@ -1,0 +1,7 @@
+aws_region        = "ap-south-1"
+github_repository = "YOUR_GITHUB_USER/astroai"
+github_oidc_subject = "repo:YOUR_GITHUB_USER@OWNER_ID/astroai@REPOSITORY_ID:environment:dev"
+
+# If LinkLens already created the provider in this account:
+# create_github_oidc_provider       = false
+# existing_github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"

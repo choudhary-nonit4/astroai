@@ -6,6 +6,11 @@ variable "github_repository" {
   description = "GitHub owner/repository, for example nchoudhary/astroai"
   type        = string
 }
+variable "github_oidc_subject" {
+  description = "Exact GitHub OIDC subject. Use the immutable owner/repository IDs for repositories that require them."
+  type        = string
+  default     = ""
+}
 variable "create_github_oidc_provider" {
   description = "Set false if this AWS account already has the GitHub Actions OIDC provider."
   type        = bool
