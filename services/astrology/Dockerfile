@@ -1,6 +1,6 @@
 FROM python:3.13-slim
 WORKDIR /service
-COPY requirements.txt .
+COPY requirements.txt requirements-runtime.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 EXPOSE 8000
