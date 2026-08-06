@@ -88,6 +88,9 @@ jobs:
           echo "web_repo=$(terraform output -raw web_repository_url)" >> "$GITHUB_OUTPUT"
           echo "api_repo=$(terraform output -raw api_repository_url)" >> "$GITHUB_OUTPUT"
           echo "calculator_repo=$(terraform output -raw calculator_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "web_log_group=$(terraform output -raw web_log_group_name)" >> "$GITHUB_OUTPUT"
+          echo "api_log_group=$(terraform output -raw api_log_group_name)" >> "$GITHUB_OUTPUT"
+          echo "calculator_log_group=$(terraform output -raw calculator_log_group_name)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -140,6 +143,9 @@ jobs:
           WEB_REPO: ${{ steps.infrastructure.outputs.web_repo }}
           API_REPO: ${{ steps.infrastructure.outputs.api_repo }}
           CALCULATOR_REPO: ${{ steps.infrastructure.outputs.calculator_repo }}
+          WEB_LOG_GROUP: ${{ steps.infrastructure.outputs.web_log_group }}
+          API_LOG_GROUP: ${{ steps.infrastructure.outputs.api_log_group }}
+          CALCULATOR_LOG_GROUP: ${{ steps.infrastructure.outputs.calculator_log_group }}
         run: |
           registry="${WEB_REPO%%/*}"
           deploy_script=$(cat <<EOF
@@ -150,8 +156,11 @@ jobs:
           docker pull '${WEB_REPO}:${IMAGE_TAG}'
           docker rm -f astroai-web astroai-api astroai-calculator 2>/dev/null || true
           docker network inspect astroai >/dev/null 2>&1 || docker network create astroai
-          docker run -d --name astroai-calculator --restart unless-stopped --network astroai --network-alias calculator --memory 192m '${CALCULATOR_REPO}:${IMAGE_TAG}'
+          docker run -d --name astroai-calculator --restart unless-stopped --network astroai --network-alias calculator --memory 192m \
+            --log-driver awslogs --log-opt awslogs-region='${AWS_REGION}' --log-opt awslogs-group='${CALCULATOR_LOG_GROUP}' --log-opt awslogs-stream='${IMAGE_TAG}' \
+            '${CALCULATOR_REPO}:${IMAGE_TAG}'
           docker run -d --name astroai-api --restart unless-stopped --network astroai --network-alias api --memory 384m \
+            --log-driver awslogs --log-opt awslogs-region='${AWS_REGION}' --log-opt awslogs-group='${API_LOG_GROUP}' --log-opt awslogs-stream='${IMAGE_TAG}' \
             -e PORT=3001 \
             -e AWS_REGION='${AWS_REGION}' \
             -e ASTROLOGY_SERVICE_URL='http://calculator:8000' \
@@ -159,7 +168,9 @@ jobs:
             -e REPORTS_BUCKET_NAME='${REPORTS_BUCKET}' \
             -e WEB_ORIGIN='http://${PUBLIC_IP}' \
             '${API_REPO}:${IMAGE_TAG}'
-          docker run -d --name astroai-web --restart unless-stopped --network astroai --memory 96m -p 80:80 '${WEB_REPO}:${IMAGE_TAG}'
+          docker run -d --name astroai-web --restart unless-stopped --network astroai --memory 96m -p 80:80 \
+            --log-driver awslogs --log-opt awslogs-region='${AWS_REGION}' --log-opt awslogs-group='${WEB_LOG_GROUP}' --log-opt awslogs-stream='${IMAGE_TAG}' \
+            '${WEB_REPO}:${IMAGE_TAG}'
           for attempt in \$(seq 1 30); do
             curl --fail --silent http://localhost/api/health && exit 0
             sleep 2

@@ -6,7 +6,12 @@ import { Report } from "./report.types";
 @Injectable()
 export class ReportsRepository {
   private readonly local = new Map<string, Report>();
-  private readonly documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+  private readonly documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+    marshallOptions: {
+      convertClassInstanceToMap: true,
+      removeUndefinedValues: true,
+    },
+  });
 
   async save(report: Report): Promise<void> {
     const tableName = process.env.REPORTS_TABLE_NAME;

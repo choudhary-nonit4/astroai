@@ -32,6 +32,14 @@ data "aws_iam_policy_document" "application_access" {
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.reports.arn}/reports/*"]
   }
+  statement {
+    actions = [
+      "logs:CreateLogStream",
+      "logs:DescribeLogStreams",
+      "logs:PutLogEvents"
+    ]
+    resources = [for log_group in aws_cloudwatch_log_group.containers : "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:${log_group.name}:*"]
+  }
 }
 
 resource "aws_iam_role_policy" "application_access" {

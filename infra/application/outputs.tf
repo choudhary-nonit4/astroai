@@ -7,3 +7,6 @@ output "reports_table_name" { value = aws_dynamodb_table.reports.name }
 output "web_repository_url" { value = aws_ecr_repository.images["web"].repository_url }
 output "api_repository_url" { value = aws_ecr_repository.images["api"].repository_url }
 output "calculator_repository_url" { value = aws_ecr_repository.images["calculator"].repository_url }
+output "web_log_group_name" { value = aws_cloudwatch_log_group.containers["web"].name }
+output "api_log_group_name" { value = aws_cloudwatch_log_group.containers["api"].name }
+output "calculator_log_group_name" { value = aws_cloudwatch_log_group.containers["calculator"].name }
