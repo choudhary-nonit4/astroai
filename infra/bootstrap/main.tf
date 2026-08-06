@@ -80,7 +80,8 @@ data "aws_iam_policy_document" "deployment_iam" {
     actions = [
       "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole",
       "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
-      "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies", "iam:PassRole"
+      "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies", "iam:ListRolePolicies",
+      "iam:ListInstanceProfilesForRole", "iam:PassRole"
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/astroai-*"]
   }
