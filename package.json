@@ -1,0 +1,16 @@
+{
+  "name": "astroai",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @astroai/web",
+    "dev:web": "npm run dev --workspace @astroai/web",
+    "dev:api": "npm run start:dev --workspace @astroai/api",
+    "build": "npm run build --workspaces --if-present",
+    "package:lambda": "bash scripts/package-lambdas.sh",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": { "node": ">=20" }
+}

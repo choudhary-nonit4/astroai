@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+generated-reports/
+build/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
