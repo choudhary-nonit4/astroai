@@ -1,4 +1,4 @@
-name: Deploy AstroAI to AWS
+name: Deploy AstroAI to EC2
 
 on:
   push:
@@ -20,7 +20,8 @@ jobs:
       contents: read
       id-token: write
     env:
-      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_attempt }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -35,6 +36,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: services/astrology/requirements.txt
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v4
@@ -48,12 +51,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install, test, and package
+      - name: Test applications
         run: |
           npm ci
           python -m pip install -r services/astrology/requirements.txt
+          npm run build
           python -m pytest services/astrology -q
-          bash scripts/package-lambdas.sh
 
       - name: Initialize Terraform state
         working-directory: infra/application
@@ -77,27 +80,123 @@ jobs:
         id: infrastructure
         working-directory: infra/application
         run: |
-          echo "api_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
           echo "website_url=$(terraform output -raw website_url)" >> "$GITHUB_OUTPUT"
-          echo "web_bucket=$(terraform output -raw web_bucket_name)" >> "$GITHUB_OUTPUT"
-          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "public_ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
+          echo "instance_id=$(terraform output -raw instance_id)" >> "$GITHUB_OUTPUT"
+          echo "reports_bucket=$(terraform output -raw reports_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "reports_table=$(terraform output -raw reports_table_name)" >> "$GITHUB_OUTPUT"
+          echo "web_repo=$(terraform output -raw web_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "api_repo=$(terraform output -raw api_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "calculator_repo=$(terraform output -raw calculator_repository_url)" >> "$GITHUB_OUTPUT"
 
-      - name: Build static frontend
-        env:
-          AWS_STATIC_EXPORT: "true"
-          NEXT_PUBLIC_API_URL: ${{ steps.infrastructure.outputs.api_url }}
-        run: npm run build --workspace @astroai/web
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Publish frontend
+      - name: Sign in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and publish web image
         run: |
-          aws s3 sync apps/web/out "s3://${{ steps.infrastructure.outputs.web_bucket }}" --delete
-          aws cloudfront create-invalidation --distribution-id "${{ steps.infrastructure.outputs.distribution_id }}" --paths '/*'
+          docker buildx build --platform linux/amd64 --push \
+            --file apps/web/Dockerfile.aws \
+            --build-arg NEXT_PUBLIC_API_URL=/api \
+            --tag "${{ steps.infrastructure.outputs.web_repo }}:${IMAGE_TAG}" .
 
-      - name: Smoke test API
-        run: curl --fail --retry 6 --retry-delay 5 "${{ steps.infrastructure.outputs.api_url }}/health"
+      - name: Build and publish API image
+        run: |
+          docker buildx build --platform linux/amd64 --push \
+            --file apps/api/Dockerfile \
+            --tag "${{ steps.infrastructure.outputs.api_repo }}:${IMAGE_TAG}" .
+
+      - name: Build and publish calculator image
+        run: |
+          docker buildx build --platform linux/amd64 --push \
+            --file services/astrology/Dockerfile \
+            --tag "${{ steps.infrastructure.outputs.calculator_repo }}:${IMAGE_TAG}" services/astrology
+
+      - name: Wait for Systems Manager
+        env:
+          INSTANCE_ID: ${{ steps.infrastructure.outputs.instance_id }}
+        run: |
+          for attempt in $(seq 1 60); do
+            if aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text | grep -q Online; then
+              exit 0
+            fi
+            echo "Waiting for EC2 to register with Systems Manager (${attempt}/60)"
+            sleep 10
+          done
+          echo "EC2 did not become available in Systems Manager" >&2
+          exit 1
+
+      - name: Deploy containers through Systems Manager
+        env:
+          INSTANCE_ID: ${{ steps.infrastructure.outputs.instance_id }}
+          PUBLIC_IP: ${{ steps.infrastructure.outputs.public_ip }}
+          REPORTS_BUCKET: ${{ steps.infrastructure.outputs.reports_bucket }}
+          REPORTS_TABLE: ${{ steps.infrastructure.outputs.reports_table }}
+          WEB_REPO: ${{ steps.infrastructure.outputs.web_repo }}
+          API_REPO: ${{ steps.infrastructure.outputs.api_repo }}
+          CALCULATOR_REPO: ${{ steps.infrastructure.outputs.calculator_repo }}
+        run: |
+          registry="${WEB_REPO%%/*}"
+          deploy_script=$(cat <<EOF
+          set -euxo pipefail
+          aws ecr get-login-password --region '${AWS_REGION}' | docker login --username AWS --password-stdin '${registry}'
+          docker pull '${CALCULATOR_REPO}:${IMAGE_TAG}'
+          docker pull '${API_REPO}:${IMAGE_TAG}'
+          docker pull '${WEB_REPO}:${IMAGE_TAG}'
+          docker rm -f astroai-web astroai-api astroai-calculator 2>/dev/null || true
+          docker network inspect astroai >/dev/null 2>&1 || docker network create astroai
+          docker run -d --name astroai-calculator --restart unless-stopped --network astroai --network-alias calculator --memory 192m '${CALCULATOR_REPO}:${IMAGE_TAG}'
+          docker run -d --name astroai-api --restart unless-stopped --network astroai --network-alias api --memory 384m \
+            -e PORT=3001 \
+            -e AWS_REGION='${AWS_REGION}' \
+            -e ASTROLOGY_SERVICE_URL='http://calculator:8000' \
+            -e REPORTS_TABLE_NAME='${REPORTS_TABLE}' \
+            -e REPORTS_BUCKET_NAME='${REPORTS_BUCKET}' \
+            -e WEB_ORIGIN='http://${PUBLIC_IP}' \
+            '${API_REPO}:${IMAGE_TAG}'
+          docker run -d --name astroai-web --restart unless-stopped --network astroai --memory 96m -p 80:80 '${WEB_REPO}:${IMAGE_TAG}'
+          for attempt in \$(seq 1 30); do
+            curl --fail --silent http://localhost/api/health && exit 0
+            sleep 2
+          done
+          docker logs astroai-api
+          exit 1
+          EOF
+          )
+          encoded_script=$(printf '%s' "$deploy_script" | base64 -w 0)
+          parameters=$(jq -n --arg command "echo '${encoded_script}' | base64 -d | bash" '{commands: [$command]}')
+          command_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy AstroAI ${IMAGE_TAG}" \
+            --parameters "$parameters" \
+            --query 'Command.CommandId' \
+            --output text)
+          for attempt in $(seq 1 60); do
+            status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)
+            case "$status" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut) echo "Deployment command ended with ${status}" >&2; exit 1 ;;
+            esac
+            sleep 5
+          done
+          final_status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text)
+          test "$final_status" = "Success"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"
+
+      - name: Smoke test deployment
+        run: |
+          curl --fail --retry 12 --retry-delay 5 "${{ steps.infrastructure.outputs.website_url }}/api/health"
+          curl --fail --retry 12 --retry-delay 5 "${{ steps.infrastructure.outputs.website_url }}/"
 
       - name: Deployment summary
         run: |
-          echo "### AstroAI deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "### AstroAI EC2 deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Website: ${{ steps.infrastructure.outputs.website_url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- API: ${{ steps.infrastructure.outputs.api_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- API health: ${{ steps.infrastructure.outputs.website_url }}/api/health" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Instance: ${{ steps.infrastructure.outputs.instance_id }}" >> "$GITHUB_STEP_SUMMARY"

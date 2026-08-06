@@ -38,9 +38,6 @@ jobs:
           npm run build
           python -m pytest services/astrology -q
 
-      - name: Package Lambda artifacts
-        run: bash scripts/package-lambdas.sh
-
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v4
         with:

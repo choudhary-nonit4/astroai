@@ -1,20 +1,18 @@
 variable "aws_region" {
   type    = string
-  default = "ap-south-1"
+  default = "us-east-1"
 }
 variable "environment" {
   type    = string
   default = "dev"
 }
-variable "api_zip_path" {
-  type    = string
-  default = "../../build/api.zip"
+variable "instance_type" {
+  description = "Small burstable EC2 instance type for the MVP."
+  type        = string
+  default     = "t3.micro"
 }
-variable "calculator_zip_path" {
-  type    = string
-  default = "../../build/calculator.zip"
-}
-variable "log_retention_days" {
-  type    = number
-  default = 7
+variable "root_volume_size" {
+  description = "Encrypted gp3 root disk size in GiB."
+  type        = number
+  default     = 16
 }

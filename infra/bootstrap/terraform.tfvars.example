@@ -1,4 +1,4 @@
-aws_region        = "ap-south-1"
+aws_region        = "us-east-1"
 github_repository = "YOUR_GITHUB_USER/astroai"
 github_oidc_subject = "repo:YOUR_GITHUB_USER@OWNER_ID/astroai@REPOSITORY_ID:environment:dev"
 

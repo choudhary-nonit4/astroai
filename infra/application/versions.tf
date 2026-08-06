@@ -3,7 +3,7 @@ terraform {
   backend "s3" {
     bucket       = "configured-by-github-actions"
     key          = "astroai/dev/terraform.tfstate"
-    region       = "ap-south-1"
+    region       = "us-east-1"
     encrypt      = true
     use_lockfile = true
   }

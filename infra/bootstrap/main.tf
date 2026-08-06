@@ -85,6 +85,15 @@ data "aws_iam_policy_document" "deployment_iam" {
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/astroai-*"]
   }
+  statement {
+    sid = "ManageAstroAiInstanceProfiles"
+    actions = [
+      "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile"
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/astroai-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "deployment_iam" {

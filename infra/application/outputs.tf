@@ -1,7 +1,9 @@
-output "website_url" { value = "https://${aws_cloudfront_distribution.web.domain_name}" }
-output "api_url" { value = aws_apigatewayv2_api.api.api_endpoint }
-output "web_bucket_name" { value = aws_s3_bucket.web.id }
+output "website_url" { value = "http://${aws_eip.web.public_ip}" }
+output "api_url" { value = "http://${aws_eip.web.public_ip}/api" }
+output "public_ip" { value = aws_eip.web.public_ip }
+output "instance_id" { value = aws_instance.web.id }
 output "reports_bucket_name" { value = aws_s3_bucket.reports.id }
-output "cloudfront_distribution_id" { value = aws_cloudfront_distribution.web.id }
-output "api_function_name" { value = aws_lambda_function.api.function_name }
-output "calculator_function_name" { value = aws_lambda_function.calculator.function_name }
+output "reports_table_name" { value = aws_dynamodb_table.reports.name }
+output "web_repository_url" { value = aws_ecr_repository.images["web"].repository_url }
+output "api_repository_url" { value = aws_ecr_repository.images["api"].repository_url }
+output "calculator_repository_url" { value = aws_ecr_repository.images["calculator"].repository_url }

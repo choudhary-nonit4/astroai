@@ -1,36 +1,29 @@
-data "aws_iam_policy_document" "lambda_trust" {
+data "aws_iam_policy_document" "ec2_trust" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
+      identifiers = ["ec2.amazonaws.com"]
     }
   }
 }
 
-resource "aws_iam_role" "calculator" {
-  name               = "${local.prefix}-calculator-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
-}
-resource "aws_iam_role_policy_attachment" "calculator_logs" {
-  role       = aws_iam_role.calculator.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+resource "aws_iam_role" "ec2" {
+  name               = "${local.prefix}-ec2-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_trust.json
 }
 
-resource "aws_iam_role" "api" {
-  name               = "${local.prefix}-api-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
-}
-resource "aws_iam_role_policy_attachment" "api_logs" {
-  role       = aws_iam_role.api.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-data "aws_iam_policy_document" "api_access" {
-  statement {
-    actions   = ["lambda:InvokeFunction"]
-    resources = [aws_lambda_function.calculator.arn]
-  }
+resource "aws_iam_role_policy_attachment" "ecr" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+data "aws_iam_policy_document" "application_access" {
   statement {
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem"]
     resources = [aws_dynamodb_table.reports.arn]
@@ -40,8 +33,14 @@ data "aws_iam_policy_document" "api_access" {
     resources = ["${aws_s3_bucket.reports.arn}/reports/*"]
   }
 }
-resource "aws_iam_role_policy" "api_access" {
+
+resource "aws_iam_role_policy" "application_access" {
   name   = "application-access"
-  role   = aws_iam_role.api.id
-  policy = data.aws_iam_policy_document.api_access.json
+  role   = aws_iam_role.ec2.id
+  policy = data.aws_iam_policy_document.application_access.json
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "${local.prefix}-ec2-profile"
+  role = aws_iam_role.ec2.name
 }

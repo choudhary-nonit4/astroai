@@ -30,7 +30,7 @@ Open [http://localhost:3000](http://localhost:3000). Health checks are available
 
 ## Deploy to AWS
 
-The repository includes a serverless AWS deployment using Terraform and GitHub Actions. It provisions CloudFront, private S3 buckets, API Gateway, two Lambda functions, DynamoDB, CloudWatch logs, and GitHub OIDC authentication without stored AWS keys.
+The repository includes an EC2-based AWS deployment using Terraform and GitHub Actions. It provisions one small instance, private ECR repositories, DynamoDB, private S3 report storage, Systems Manager access, and GitHub OIDC authentication without stored AWS keys or SSH credentials.
 
 Follow [`docs/AWS_DEPLOYMENT.md`](docs/AWS_DEPLOYMENT.md) for the one-time bootstrap and deployment procedure.
 
@@ -93,7 +93,7 @@ apps/web/                 Next.js UI and chart renderer
 apps/api/                 NestJS report API and printable report
 services/astrology/       FastAPI deterministic calculation boundary
 infra/bootstrap/          One-time state bucket and GitHub OIDC role
-infra/application/        Terraform-managed AWS application resources
+infra/application/        Terraform-managed EC2 application resources
 .github/workflows/        Pull-request validation and main-branch deployment
 docker-compose.yml        Local three-service environment
 .env.example              Local configuration and future AWS keys
