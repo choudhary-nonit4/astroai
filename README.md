@@ -34,6 +34,8 @@ The repository includes an EC2-based AWS deployment using Terraform and GitHub A
 
 Follow [`docs/AWS_DEPLOYMENT.md`](docs/AWS_DEPLOYMENT.md) for the one-time bootstrap and deployment procedure.
 
+If GitHub-hosted runners are unavailable, provision the standalone EC2 runner with `infra/runner/cloudformation.yaml` and follow [`docs/SELF_HOSTED_RUNNER.md`](docs/SELF_HOSTED_RUNNER.md).
+
 ## Run locally
 
 Requirements: Node.js 20+, npm, and Python 3.11+.

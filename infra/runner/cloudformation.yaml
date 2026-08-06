@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Dedicated EC2 self-hosted GitHub Actions runner host for AstroAI
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.small
+      - t3.medium
+    Description: t3.small is suitable for the AstroAI MVP Docker builds.
+  RootVolumeSize:
+    Type: Number
+    Default: 30
+    MinValue: 20
+    MaxValue: 100
+    Description: Encrypted gp3 root volume size in GiB.
+  VpcCidr:
+    Type: String
+    Default: 10.43.0.0/16
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.43.1.0/24
+  UbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: Canonical Ubuntu 24.04 LTS x86-64 AMI resolved by Systems Manager.
+
+Resources:
+  RunnerVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: astroai-runner-vpc
+        - Key: Project
+          Value: AstroAI
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: astroai-runner-igw
+        - Key: Project
+          Value: AstroAI
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref RunnerVpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RunnerVpc
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: astroai-runner-public
+        - Key: Project
+          Value: AstroAI
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: astroai-runner-public
+        - Key: Project
+          Value: AstroAI
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  RunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: No inbound access; runner and SSM use outbound HTTPS
+      VpcId: !Ref RunnerVpc
+      SecurityGroupEgress:
+        - Description: Outbound internet access for GitHub, packages, ECR and AWS APIs
+          IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: astroai-runner-egress-only
+        - Key: Project
+          Value: AstroAI
+
+  RunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: astroai-github-runner-host
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Project
+          Value: AstroAI
+        - Key: Purpose
+          Value: GitHubActionsRunner
+
+  RunnerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: astroai-github-runner-host
+      Roles:
+        - !Ref RunnerRole
+
+  RunnerInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - DefaultRoute
+      - PublicRouteTableAssociation
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref RunnerInstanceProfile
+      Monitoring: false
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref RunnerSecurityGroup
+          SubnetId: !Ref PublicSubnet
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: astroai-github-runner
+        - Key: Project
+          Value: AstroAI
+        - Key: Purpose
+          Value: GitHubActionsRunner
+      UserData:
+        Fn::Base64: |
+          #!/usr/bin/env bash
+          set -euxo pipefail
+          exec > >(tee /var/log/astroai-runner-bootstrap.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y ca-certificates curl git gzip jq tar unzip zip docker.io
+          systemctl enable --now docker
+
+          id actions >/dev/null 2>&1 || useradd --create-home --shell /bin/bash actions
+          usermod -aG docker actions
+          install -d -o actions -g actions /opt/actions-runner
+
+          curl --fail --silent --show-error --location \
+            "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+            --output /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          /tmp/aws/install --update
+          rm -rf /tmp/aws /tmp/awscliv2.zip
+
+          fallocate -l 2G /swapfile
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+          mkdir -p /etc/needrestart/conf.d
+          cat > /etc/needrestart/conf.d/actions_runner_services.conf <<'EOF'
+          $nrconf{override_rc}{qr(^actions\.runner\..+\.service$)} = 0;
+          EOF
+
+          systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+          systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+          touch /var/lib/astroai-runner-bootstrap-complete
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance to open through Systems Manager Session Manager
+    Value: !Ref RunnerInstance
+  PublicIp:
+    Description: Dynamic public IP used only for outbound internet access; no inbound rules exist
+    Value: !GetAtt RunnerInstance.PublicIp
+  RunnerDirectory:
+    Value: /opt/actions-runner
+  RunnerUser:
+    Value: actions
+  WorkflowRunsOn:
+    Value: "[self-hosted, linux, x64, astroai-runner]"
