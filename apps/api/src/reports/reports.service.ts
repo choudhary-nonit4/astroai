@@ -5,6 +5,7 @@ import { CalculationClient } from "./calculation.client";
 import { CreateReportDto } from "./create-report.dto";
 import { Report } from "./report.types";
 import { ReportsRepository } from "./reports.repository";
+import { interpretChart } from "./interpretation";
 
 @Injectable()
 export class ReportsService {
@@ -23,10 +24,7 @@ export class ReportsService {
       expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
       subject,
       calculation,
-      interpretation: {
-        summary: `With ${calculation.ascendant} rising and the Moon in ${calculation.moonSign}, this sample reading highlights a balance between outward expression and inner reflection. The ${subject.focusArea.toLowerCase()} interpretation is a placeholder for a future Bedrock workflow.`,
-        disclaimer: "This MVP uses mocked planetary positions and is intended for demonstration and reflection only.",
-      },
+      interpretation: interpretChart(calculation, subject.focusArea),
     };
     await this.repository.save(report);
     await this.storeArtifact(report);
@@ -65,8 +63,9 @@ export class ReportsService {
 }
 
 function renderReport(report: Report) {
-  const rows = report.calculation.planets.map((planet) => `<tr><td>${escapeHtml(planet.name)}</td><td>${escapeHtml(planet.sign)}</td><td>${planet.house}</td><td>${planet.degree.toFixed(2)}°</td></tr>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(report.subject.name)} — AstroAI report</title><style>@page{size:A4;margin:20mm}body{font-family:Georgia,serif;color:#241c18;max-width:760px;margin:40px auto;line-height:1.55}h1{color:#9b442b}small{color:#756a62}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{border-bottom:1px solid #dacbb8;text-align:left;padding:10px}.facts{display:flex;gap:30px;padding:16px 0;border-block:1px solid #dacbb8}.note{background:#f7f0e6;padding:16px}button{padding:10px 16px}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Print / Save as PDF</button><p>✦ ASTROAI · MVP REPORT</p><h1>${escapeHtml(report.subject.name)}'s Kundli</h1><small>${escapeHtml(report.subject.birthDate)} at ${escapeHtml(report.subject.birthTime)} · ${escapeHtml(report.subject.birthPlace)}</small><div class="facts"><p><small>ASCENDANT</small><br><b>${escapeHtml(report.calculation.ascendant)}</b></p><p><small>MOON SIGN</small><br><b>${escapeHtml(report.calculation.moonSign)}</b></p><p><small>NAKSHATRA</small><br><b>${escapeHtml(report.calculation.nakshatra)}</b></p></div><h2>Planetary positions</h2><table><thead><tr><th>Planet</th><th>Sign</th><th>House</th><th>Degree</th></tr></thead><tbody>${rows}</tbody></table><h2>Interpretation placeholder</h2><p>${escapeHtml(report.interpretation.summary)}</p><p class="note"><b>Important:</b> ${escapeHtml(report.interpretation.disclaimer)}</p></body></html>`;
+  const rows = report.calculation.planets.map((planet) => `<tr><td>${escapeHtml(planet.name)}${planet.retrograde ? " ℞" : ""}</td><td>${escapeHtml(planet.sign)}</td><td>${planet.house}</td><td>${planet.degree.toFixed(2)}°</td></tr>`).join("");
+  const insights = report.interpretation.insights.map((insight) => `<section><h3>${escapeHtml(insight.title)}</h3><small>${escapeHtml(insight.evidence)}</small><p>${escapeHtml(insight.text)}</p></section>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(report.subject.name)} — AstroAI report</title><style>@page{size:A4;margin:20mm}body{font-family:Georgia,serif;color:#241c18;max-width:760px;margin:40px auto;line-height:1.55}h1{color:#9b442b}small{color:#756a62}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{border-bottom:1px solid #dacbb8;text-align:left;padding:10px}.facts{display:flex;gap:30px;padding:16px 0;border-block:1px solid #dacbb8}.note,section{background:#f7f0e6;padding:16px;margin:12px 0}section small{color:#9b442b}button{padding:10px 16px}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Print / Save as PDF</button><p>✦ ASTROAI · SIDEREAL D1 REPORT</p><h1>${escapeHtml(report.subject.name)}'s Kundli</h1><small>${escapeHtml(report.subject.birthDate)} at ${escapeHtml(report.subject.birthTime)} · ${escapeHtml(report.subject.birthPlace)} · ${escapeHtml(report.subject.timeZone)}</small><div class="facts"><p><small>ASCENDANT</small><br><b>${escapeHtml(report.calculation.ascendant)} ${report.calculation.ascendantDegree.toFixed(2)}°</b></p><p><small>MOON SIGN</small><br><b>${escapeHtml(report.calculation.moonSign)}</b></p><p><small>NAKSHATRA</small><br><b>${escapeHtml(report.calculation.nakshatra)} · Pada ${report.calculation.nakshatraPada}</b></p></div><h2>Planetary positions</h2><table><thead><tr><th>Planet</th><th>Sign</th><th>House</th><th>Degree</th></tr></thead><tbody>${rows}</tbody></table><h2>Traceable interpretation</h2><p>${escapeHtml(report.interpretation.summary)}</p>${insights}<p><b>Method:</b> ${escapeHtml(report.interpretation.methodology)}</p><p class="note"><b>Important:</b> ${escapeHtml(report.interpretation.disclaimer)}</p><small>Engine: ${escapeHtml(report.calculation.engine)} · ${escapeHtml(report.calculation.metadata.zodiac)} · ${escapeHtml(report.calculation.metadata.ayanamsa)} ayanamsa · ${escapeHtml(report.calculation.metadata.houseSystem)}</small></body></html>`;
 }
 
 function escapeHtml(value: string) {

@@ -55,6 +55,7 @@ jobs:
         run: |
           npm ci
           python -m pip install -r services/astrology/requirements.txt
+          npm test
           npm run build
           python -m pytest services/astrology -q
 

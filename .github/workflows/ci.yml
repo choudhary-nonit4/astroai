@@ -35,6 +35,7 @@ jobs:
 
       - name: Test and build
         run: |
+          npm test
           npm run build
           python -m pytest services/astrology -q
 
